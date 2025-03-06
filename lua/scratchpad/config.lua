@@ -1,3 +1,4 @@
+---@diagnostic disable-next-line: unused-local
 local log = require("scratchpad.log")
 
 local M = {}
@@ -152,6 +153,9 @@ function M.get_default_config()
 	}
 end
 
+---@param partial_config ScratchpadPartialConfig?
+---@param latest_config ScratchpadConfig?
+---@return ScratchpadConfig
 function M.merge_config(partial_config, latest_config)
 	partial_config = partial_config or {}
 	local config = latest_config or M.get_default_config()

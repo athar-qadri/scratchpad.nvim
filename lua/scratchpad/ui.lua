@@ -120,6 +120,12 @@ local create_window = function(filename, data)
 
 	vim.api.nvim_buf_set_lines(state.floats.body.buf, 0, -1, false, vim.split(data.body, "\n"))
 	local pos = { data.cur_pos.r, data.cur_pos.c }
+
+	-- temp fix: Cursor position outside buffer
+	-- TODO: why this happens, needs to be figured out
+	local lc = vim.api.nvim_buf_line_count(state.floats.body.buf)
+	pos[1] = math.min(math.max(pos[1], 1), lc)
+
 	vim.api.nvim_win_set_cursor(state.floats.body.win, pos)
 
 	for option, temp_config in pairs(restore) do

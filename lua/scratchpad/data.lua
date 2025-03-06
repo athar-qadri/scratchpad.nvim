@@ -1,4 +1,5 @@
 local Path = require("plenary.path")
+---@diagnostic disable-next-line: unused-local
 local log = require("scratchpad.log")
 
 local data_path = string.format("%s/scratchpad", vim.fn.stdpath("data"))
