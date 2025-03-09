@@ -153,8 +153,6 @@ function M.get_default_config()
 	}
 end
 
----@param partial_config ScratchpadPartialConfig?
----@param latest_config ScratchpadConfig?
 ---@return ScratchpadConfig
 function M.merge_config(partial_config, latest_config)
 	partial_config = partial_config or {}

@@ -87,13 +87,24 @@ local function read_data(config, provided_path)
 	return data
 end
 
+function Data:fetch()
+	local ok, data = pcall(read_data, self.config)
+	self.scratch = data
+	self.has_error = not ok
+end
+
 ---@param config ScratchpadConfig
 ---@return ScratchpadData
 function Data:new(config)
-	local ok, data = pcall(read_data, config)
 	return setmetatable({
-		scratch = data,
-		has_error = not ok,
+		scratch = {
+			body = "",
+			cur_pos = {
+				r = 1,
+				c = 0,
+			},
+		},
+		has_error = false,
 		config = config,
 	}, self)
 end

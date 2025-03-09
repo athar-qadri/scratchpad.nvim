@@ -3,6 +3,7 @@ local log = require("scratchpad.log")
 
 ---@alias ScratchpadUIData string
 ---@class ScratchpadUI
+---@field last_cursor {}
 ---@field win_id number
 ---@field bufnr number
 ---@field settings ScratchpadSettings
@@ -139,6 +140,11 @@ local create_window = function(filename, data)
 	end)
 
 	scratchpad_keymap("n", "<Esc>", function()
+		local ui = require("scratchpad").ui
+		if ui.win_id and vim.api.nvim_win_is_valid(ui.win_id) then
+			ui.last_cursor = vim.api.nvim_win_get_cursor(ui.win_id)
+			ui.buf_data = table.concat(vim.api.nvim_buf_get_lines(ui.bufnr, 0, -1, true), "\n")
+		end
 		vim.schedule(function()
 			require("scratchpad").ui:close_menu()
 		end)
@@ -147,6 +153,11 @@ local create_window = function(filename, data)
 	vim.api.nvim_create_autocmd("BufWriteCmd", {
 		buffer = state.floats.body.buf,
 		callback = function()
+			local ui = require("scratchpad").ui
+			if ui.win_id and vim.api.nvim_win_is_valid(ui.win_id) then
+				ui.last_cursor = vim.api.nvim_win_get_cursor(ui.win_id)
+				ui.buf_data = table.concat(vim.api.nvim_buf_get_lines(ui.bufnr, 0, -1, true), "\n")
+			end
 			vim.schedule(function()
 				require("scratchpad").ui:sync()
 				require("scratchpad").ui:close_menu()
@@ -157,6 +168,11 @@ local create_window = function(filename, data)
 	vim.api.nvim_create_autocmd("BufLeave", {
 		buffer = state.floats.body.buf,
 		callback = function()
+			local ui = require("scratchpad").ui
+			if ui.win_id and vim.api.nvim_win_is_valid(ui.win_id) then
+				ui.last_cursor = vim.api.nvim_win_get_cursor(ui.win_id)
+				ui.buf_data = table.concat(vim.api.nvim_buf_get_lines(ui.bufnr, 0, -1, true), "\n")
+			end
 			vim.schedule(function()
 				require("scratchpad").ui:close_menu()
 			end)
@@ -217,48 +233,73 @@ function ScratchpadUI:close_menu()
 end
 
 function ScratchpadUI:sync()
-	if self.bufnr == nil then
-		--if self bufnr is nil, we can consider that another buffer is loaded
-		local mode = vim.api.nvim_get_mode()["mode"]
-		if mode == "n" then
-			--get current line
-			local current_line = vim.api.nvim_get_current_line()
-			if #current_line ~= 0 then
-				local _data = require("scratchpad").ui.data.scratch
-				local _sc, _cur_pos = _data.body, _data.cur_pos
-				if #_sc ~= 0 then
-					_sc = _sc .. "\n"
-				end
-				local new_data = _sc .. current_line
-				local _ = require("scratchpad").ui.data:sync_scratch(_cur_pos, new_data)
-			end
-			return
-		end
+	if self.bufnr ~= nil then
+		local cursor = self.last_cursor or { 1, 0 }
+		self.data:sync_scratch({ r = cursor[1], c = cursor[2] }, self.buf_data)
+		return
+	end
 
-		if mode == "v" then
-			local _, ls, cs = unpack(vim.fn.getpos("v"))
-			local _, le, ce = unpack(vim.fn.getpos("."))
-			local selected_text = table.concat(vim.api.nvim_buf_get_text(0, ls - 1, cs - 1, le - 1, ce, {}), "\n")
+	local mode = vim.api.nvim_get_mode()["mode"]
+	if mode ~= "V" and mode ~= "v" and mode ~= "n" then
+		return
+	end
 
-			if #selected_text ~= 0 then
-				local _data = require("scratchpad").ui.data.scratch
-				local _sc, _cur_pos = _data.body, _data.cur_pos
-				if #_sc ~= 0 then
-					_sc = _sc .. "\n"
-				end
-				local new_data = _sc .. selected_text
-				local _ = require("scratchpad").ui.data:sync_scratch(_cur_pos, new_data)
-				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
+	--if self bufnr is nil, we can consider that another buffer is loaded
+	self.data:fetch()
+	local _data = require("scratchpad").ui.data.scratch
+	local _sc, _cur_pos = _data.body, _data.cur_pos
+	local new_data = ""
+	if string.upper(mode) == "N" then
+		--get current line
+		local current_line = vim.api.nvim_get_current_line()
+		if #current_line ~= 0 then
+			if #_sc ~= 0 then
+				_sc = _sc .. "\n"
 			end
+			new_data = _sc .. current_line
+			local lines = vim.split(new_data, "\n")
+			_cur_pos.r = #lines
+			_cur_pos.c = #lines[#lines]
+			local _ = require("scratchpad").ui.data:sync_scratch(_cur_pos, new_data)
 		end
 		return
 	end
 
-	local bufnr = self.bufnr
-	local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
-	local row, col = unpack(vim.api.nvim_win_get_cursor(0))
-	--writing buffer content to scratch pad
-	self.data:sync_scratch({ r = row, c = col }, table.concat(lines, "\n"))
+	if string.upper(mode) == "V" then
+		local _, ls, cs = unpack(vim.fn.getpos("v"))
+		local _, le, ce = unpack(vim.fn.getpos("."))
+
+		-- Normalize direction (ensure ls <= le and cs <= ce)
+		-- This is required if selection is done in reverse (from right to left / bottom to top)
+		if ls > le or (ls == le and cs > ce) then
+			ls, le = le, ls
+			cs, ce = ce, cs
+		end
+
+		if mode == "V" then
+			local col_end = #table.concat(vim.api.nvim_buf_get_lines(0, le - 1, le, false), "\n")
+			ce = col_end
+			cs = 1
+		end
+
+		local selected_text = table.concat(vim.api.nvim_buf_get_text(0, ls - 1, cs - 1, le - 1, ce, {}), "\n")
+
+		if #selected_text ~= 0 then
+			--local _data = require("scratchpad").ui.data.scratch
+			--local _sc, _cur_pos = _data.body, _data.cur_pos
+			if #_sc ~= 0 then
+				_sc = _sc .. "\n"
+			end
+			new_data = _sc .. selected_text
+			local lines = vim.split(new_data, "\n")
+			_cur_pos.r = #lines
+			_cur_pos.c = #lines[#lines]
+		end
+	end
+	if new_data ~= "" then
+		local _ = require("scratchpad").ui.data:sync_scratch(_cur_pos, new_data)
+	end
+	vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<Esc>", true, false, true), "n", true)
 end
 
 function ScratchpadUI:new_scratchpad()
@@ -267,12 +308,16 @@ function ScratchpadUI:new_scratchpad()
 	end
 
 	if self.win_id ~= nil then
+		self.last_cursor = vim.api.nvim_win_get_cursor(self.win_id)
+		self.buf_data = table.concat(vim.api.nvim_buf_get_lines(self.bufnr, 0, -1, true), "\n")
 		self:close_menu()
 		return
 	end
 
 	local filename = vim.api.nvim_buf_get_name(0)
 
+	require("scratchpad").data:fetch()
+	self.buf_data = self.data.scratch.body
 	local workspace = create_window(filename, self.data)
 
 	self.bufnr = workspace.body.buf
@@ -296,7 +341,7 @@ function ScratchpadUI:new(settings)
 	return setmetatable({
 		win_id = nil,
 		bufnr = nil,
-		buf_data = nil,
+		buf_data = "",
 		settings = settings,
 	}, self)
 end
